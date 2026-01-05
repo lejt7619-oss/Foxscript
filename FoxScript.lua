@@ -1,4 +1,159 @@
--- Venyx Ui
+-- ================== GLOBAL SWITCH ==================
+_G.HITBOX_POV_ENABLED = true
+_G.LINES_ENABLED = true
+
+-- ================== SERVICES ==================
+local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Cam = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+-- ================== AIM + FOV ==================
+local smoothFactor = 0.25
+
+local function getHeadScreenPosition(character)
+    local head = character:FindFirstChild("Head")
+    if head then
+        local pos, vis = Cam:WorldToViewportPoint(head.Position)
+        return Vector2.new(pos.X, pos.Y), vis
+    end
+end
+
+local function findClosestPlayerInCircle(center, radius)
+    local closest, dist = nil, math.huge
+    for _, m in ipairs(workspace:GetChildren()) do
+        if m:IsA("Model") and m:FindFirstChild("HumanoidRootPart") and m:FindFirstChild("Head") then
+            local hp, vis = getHeadScreenPosition(m)
+            if vis then
+                local d = (hp - center).Magnitude
+                if d <= radius and d < dist then
+                    dist = d
+                    closest = m
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- ================== FOV + CROSS ==================
+local circle = Drawing.new("Circle")
+circle.Radius = 50
+circle.Thickness = 2
+circle.Transparency = 0.6
+circle.Color = Color3.fromRGB(255,255,255)
+circle.Filled = false
+
+local crossH = Drawing.new("Line")
+local crossV = Drawing.new("Line")
+crossH.Thickness = 2
+crossV.Thickness = 2
+crossH.Color = circle.Color
+crossV.Color = circle.Color
+
+-- ================== HITBOX ==================
+local HBSizeX, HBSizeY, HBSizeZ = 9, 13, 7
+local HBTrans = 0.5
+local hitboxlist = {}
+
+task.spawn(function()
+    while task.wait(0.3) do
+        for _, m in pairs(workspace:GetChildren()) do
+            if m:IsA("Model") and m:FindFirstChild("HumanoidRootPart") and not m:FindFirstChild("Fake1") then
+                local fh = Instance.new("Part", m)
+                fh.Name = "Head"
+                fh.Size = Vector3.new(HBSizeX, HBSizeY, HBSizeZ)
+                fh.CFrame = m.HumanoidRootPart.CFrame
+                fh.Anchored = true
+                fh.CanCollide = false
+                fh.Transparency = HBTrans
+                fh.BrickColor = BrickColor.new("Really red")
+
+                Instance.new("Part", m).Name = "Fake1"
+                table.insert(hitboxlist, fh)
+            end
+        end
+    end
+end)
+
+-- ================== ESP + LINES ==================
+local ESPObjects = {}
+local ESP_COLOR = Color3.fromRGB(0,170,255)
+
+local function CreateESP(model)
+    if ESPObjects[model] then return end
+
+    local hl = Instance.new("Highlight")
+    hl.FillColor = ESP_COLOR
+    hl.OutlineColor = Color3.new(1,1,1)
+    hl.FillTransparency = 0.6
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = model
+    hl.Parent = game:GetService("CoreGui")
+
+    local line = Drawing.new("Line")
+    line.Color = ESP_COLOR
+    line.Thickness = 1.5
+    line.Transparency = 1
+
+    ESPObjects[model] = {HL = hl, Line = line}
+end
+
+for _, m in pairs(workspace:GetChildren()) do
+    if m:IsA("Model") and m:FindFirstChild("HumanoidRootPart") then
+        CreateESP(m)
+    end
+end
+
+-- ================== ESP UPDATE ==================
+RS.RenderStepped:Connect(function()
+    local center = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+
+    for model,data in pairs(ESPObjects) do
+        if not _G.HITBOX_POV_ENABLED or not model.Parent then
+            data.HL.Enabled = false
+            data.Line.Visible = false
+        else
+            data.HL.Enabled = true
+            if _G.LINES_ENABLED then
+                local pos, vis = Cam:WorldToViewportPoint(model.HumanoidRootPart.Position)
+                if vis then
+                    data.Line.From = center
+                    data.Line.To = Vector2.new(pos.X, pos.Y)
+                    data.Line.Visible = true
+                else
+                    data.Line.Visible = false
+                end
+            else
+                data.Line.Visible = false
+            end
+        end
+    end
+end)
+
+-- ================== AIM LOOP ==================
+RS.RenderStepped:Connect(function()
+    local center = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+    circle.Position = center
+    circle.Visible = _G.HITBOX_POV_ENABLED
+
+    if _G.HITBOX_POV_ENABLED and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local target = findClosestPlayerInCircle(center, circle.Radius)
+        if target then
+            local sp = Cam:WorldToViewportPoint(target.Head.Position)
+            local delta = (Vector2.new(sp.X, sp.Y) - UIS:GetMouseLocation()) * smoothFactor
+            mousemoverel(delta.X, delta.Y)
+        end
+    end
+end)
+
+-- ================== VENYX UI ==================
+-- Вставлен полный оригинальный Venyx UI из FoxScript
+-- Изменено: Test1 → Combat
+-- Внутри Combat добавлен Hitbox+POV
+
+local VenyxUI = {} -- [-- Venyx Ui
 -- init
 local player = game.Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -2340,4 +2495,22 @@ section2:Dropdown("Dropdown", {"Hello", "World", "Hello World", "Word", 1, 2, 3}
    print("Selected", text)
 end)
 
-return library
+return library]  
+
+-- Пример интеграции Combat страницы
+local CombatPage = VenyxUI:CreatePage("Combat")
+
+CombatPage:CreateToggle("Hitbox+POV", _G.HITBOX_POV_ENABLED, function(value)
+    _G.HITBOX_POV_ENABLED = value
+    for _, p in pairs(hitboxlist) do
+        if p:IsA("Part") then
+            p.Transparency = value and HBTrans or 1
+        end
+    end
+end)
+
+CombatPage:CreateToggle("Lines", _G.LINES_ENABLED, function(value)
+    _G.LINES_ENABLED = value
+end)
+
+-- Остальные страницы UI остаются без изменений
